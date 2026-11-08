@@ -5,7 +5,7 @@ function thoughtTags(thought){
   const inline=[...((thought.title||'')+' '+(thought.content||'')).matchAll(/(?:^|\s)#([\p{L}\p{N}_-]+)/gu)].map(m=>m[1]);
   return [...new Set([...explicit,...inline].map(t=>String(t).trim().replace(/^#+/,'').normalize('NFC')).filter(Boolean))];
 }
-function buildTagMap(thoughts){
+function buildTagMap(thoughts,tagPositions={}){
   const groups=new Map();
   thoughts.forEach(t=>thoughtTags(t).forEach(tag=>{if(!groups.has(tag))groups.set(tag,[]);groups.get(tag).push(t.id);}));
   const entries=[...groups].sort(([a],[b])=>a.localeCompare(b,'ko'));
@@ -18,6 +18,7 @@ function buildTagMap(thoughts){
     else {const untagged=thoughts.filter(t=>!thoughtTags(t).length),index=untagged.findIndex(v=>v.id===t.id);x=(index%4)*165-((Math.min(untagged.length,4)-1)*165)/2;y=hubs.length?Math.max(...hubs.map(h=>h.y))+230+Math.floor(index/4)*100:Math.floor(index/4)*100;}
     return {id:t.id,tags,x:x+(t.tagMapDX||0),y:y+(t.tagMapDY||0)};
   });
+  hubs.forEach(h=>{const position=tagPositions&&Object.hasOwn(tagPositions,h.tag)?tagPositions[h.tag]:null;if(Number.isFinite(position?.x))h.x+=position.x;if(Number.isFinite(position?.y))h.y+=position.y;});
   return {hubs,nodes,edges:nodes.flatMap(n=>n.tags.map(tag=>({id:n.id,tag})))};
 }
 if(typeof module!=='undefined'&&module.exports)module.exports={thoughtTags,buildTagMap};

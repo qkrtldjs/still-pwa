@@ -27,7 +27,7 @@ document.addEventListener('keydown',e=>{const typing=['INPUT','TEXTAREA','SELECT
 const svg=$('#graph');let coords=new Map(),drag=null,mapScale=1;
 function drawMap(){
   if(view!=='mind')return;
-  const list=getVisible(),model=buildTagMap(list),byId=new Map(list.map(t=>[t.id,t]));
+  const list=getVisible(),model=buildTagMap(list,settings.tagPositions),byId=new Map(list.map(t=>[t.id,t]));
   $('#map-empty').hidden=list.length>0;
   $('#map-empty h2').textContent=$('#search').value?'검색 결과가 없습니다.':'해시태그로 생각을 연결하세요.';
   $('#map-empty p').textContent=$('#search').value?'다른 단어로 찾아보세요.':'태그 입력란이나 내용에 #아이디어처럼 해시태그를 남기면, 같은 태그의 생각들이 하나로 모입니다.';
@@ -47,12 +47,30 @@ function drawMap(){
   $('#connection-count').textContent=model.hubs.length+' TAGS · '+model.edges.length+' CONNECTIONS';$('#zoom-reset').textContent=Math.round(zoom*100)+'%';
 }
 let mapCenter={x:0,y:0};
-svg.addEventListener('pointerdown',e=>{if(e.button!==0)return;const node=e.target.closest('[data-node]');if(!node)return;const t=thoughts.find(t=>t.id===node.dataset.node);drag={id:t.id,startX:e.clientX,startY:e.clientY,previousX:t.tagMapDX||0,previousY:t.tagMapDY||0,moved:false};svg.setPointerCapture(e.pointerId);});
-svg.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag.startX,dy=e.clientY-drag.startY;if(!drag.moved&&Math.hypot(dx,dy)<6)return;drag.moved=true;const t=thoughts.find(t=>t.id===drag.id);t.tagMapDX=drag.previousX+dx/mapScale;t.tagMapDY=drag.previousY+dy/mapScale;drawMap();});
-svg.addEventListener('pointerup',()=>{if(!drag)return;const current=drag;drag=null;if(current.moved){if(!persist()){const t=thoughts.find(t=>t.id===current.id);t.tagMapDX=current.previousX;t.tagMapDY=current.previousY;}drawMap();}else openEditor(current.id);});
-svg.addEventListener('pointercancel',()=>{if(drag){const t=thoughts.find(t=>t.id===drag.id);t.tagMapDX=drag.previousX;t.tagMapDY=drag.previousY;drag=null;drawMap();}});
-svg.addEventListener('click',e=>{const hub=e.target.closest('[data-map-tag]');if(hub)setView('library',hub.dataset.mapTag);});
+function saveTagPositions(){try{localStorage.setItem(SETTINGS,JSON.stringify(settings));return true;}catch{notify('해시태그 위치를 저장하지 못했습니다.');return false;}}
+function rollbackDrag(d){if(d.kind==='tag'){if(d.existed)settings.tagPositions[d.id]={x:d.previousX,y:d.previousY};else delete settings.tagPositions[d.id];}else{const t=thoughts.find(t=>t.id===d.id);t.tagMapDX=d.previousX;t.tagMapDY=d.previousY;}}
+svg.addEventListener('pointerdown',e=>{
+  if(e.button!==0||drag)return;
+  const node=e.target.closest('[data-node]'),hub=e.target.closest('[data-map-tag]');if(!node&&!hub)return;
+  if(hub){if(!settings.tagPositions||typeof settings.tagPositions!=='object'||Array.isArray(settings.tagPositions))settings.tagPositions={};const id=hub.dataset.mapTag,existed=Object.hasOwn(settings.tagPositions,id),position=existed?settings.tagPositions[id]:null;drag={kind:'tag',id,existed,previousX:Number.isFinite(position?.x)?position.x:0,previousY:Number.isFinite(position?.y)?position.y:0};}
+  else{const t=thoughts.find(t=>t.id===node.dataset.node);drag={kind:'thought',id:t.id,previousX:t.tagMapDX||0,previousY:t.tagMapDY||0};}
+  Object.assign(drag,{pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,moved:false});svg.setPointerCapture(e.pointerId);e.preventDefault();
+});
+svg.addEventListener('pointermove',e=>{
+  if(!drag||e.pointerId!==drag.pointerId)return;const dx=e.clientX-drag.startX,dy=e.clientY-drag.startY;
+  if(!drag.moved&&Math.hypot(dx,dy)<6)return;drag.moved=true;
+  if(drag.kind==='tag'){Object.defineProperty(settings.tagPositions,drag.id,{value:{x:drag.previousX+dx/mapScale,y:drag.previousY+dy/mapScale},enumerable:true,configurable:true,writable:true});}
+  else{const t=thoughts.find(t=>t.id===drag.id);t.tagMapDX=drag.previousX+dx/mapScale;t.tagMapDY=drag.previousY+dy/mapScale;}
+  drawMap();
+});
+svg.addEventListener('pointerup',e=>{
+  if(!drag||e.pointerId!==drag.pointerId)return;const current=drag;drag=null;
+  if(current.moved){if(!(current.kind==='tag'?saveTagPositions():persist()))rollbackDrag(current);drawMap();}
+  else if(current.kind==='tag')setView('library',current.id);else openEditor(current.id);
+});
+function cancelMapDrag(e){if(drag&&e.pointerId===drag.pointerId){rollbackDrag(drag);drag=null;drawMap();}}
+svg.addEventListener('pointercancel',cancelMapDrag);svg.addEventListener('lostpointercapture',cancelMapDrag);
 svg.addEventListener('keydown',e=>{if(!['Enter',' '].includes(e.key))return;const node=e.target.closest('[data-node]'),hub=e.target.closest('[data-map-tag]');if(node||hub){e.preventDefault();if(node)openEditor(node.dataset.node);else setView('library',hub.dataset.mapTag);}});
 svg.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.4,Math.min(2,zoom*(e.deltaY>0?.93:1.07)));drawMap();},{passive:false});$('#zoom-in').onclick=()=>{zoom=Math.min(2,zoom+.15);drawMap();};$('#zoom-out').onclick=()=>{zoom=Math.max(.4,zoom-.15);drawMap();};$('#zoom-reset').onclick=()=>{zoom=1;drawMap();};new ResizeObserver(drawMap).observe(svg);
-window.addEventListener('storage',e=>{if(e.key!==KEY)return;try{const rows=JSON.parse(e.newValue||'[]');if(!Array.isArray(rows))return;if($('#editor').open){notify('다른 탭에서 기록이 변경되었습니다. 수정창을 닫고 새로고침해 주세요.');return;}thoughts=rows.map(normalize);render();}catch{}});
+window.addEventListener('storage',e=>{if(e.key===SETTINGS){try{settings=JSON.parse(e.newValue||'{}')||{};applyTheme();drawMap();}catch{}return;}if(e.key!==KEY)return;try{const rows=JSON.parse(e.newValue||'[]');if(!Array.isArray(rows))return;if($('#editor').open){notify('다른 탭에서 기록이 변경되었습니다. 수정창을 닫고 새로고침해 주세요.');return;}thoughts=rows.map(normalize);render();}catch{}});
 const mobileData=document.createElement('div');mobileData.className='mobile-data';mobileData.innerHTML='<button type="button" id="mobile-export">백업 내보내기 ↗</button><button type="button" id="mobile-import">백업 가져오기 ↙</button>';document.querySelector('main').append(mobileData);$('#mobile-export').onclick=exportBackup;$('#mobile-import').onclick=()=>$('#import-file').click();applyTheme();render();if(!storageHealthy)notify('저장된 기록을 읽지 못했습니다. 기존 데이터 보호를 위해 덮어쓰기를 중단했습니다.');

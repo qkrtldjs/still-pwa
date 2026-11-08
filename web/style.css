@@ -3,3 +3,5 @@
 @media(min-width:681px){.mobile-data{display:none}}
 
 .tag-hub{cursor:pointer}.tag-hub rect{fill:var(--button);stroke:var(--line);stroke-width:1}.tag-hub text{fill:var(--button-text);font-size:11px;font-weight:600;pointer-events:none}.tag-hub .hub-count{font-size:8px;font-weight:400;opacity:.65}.tag-hub:hover{opacity:.85}.map-edge{stroke-opacity:.32}
+
+.tag-hub{cursor:grab}.tag-hub:active{cursor:grabbing}
